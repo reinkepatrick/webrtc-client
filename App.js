@@ -7,10 +7,31 @@
  */
 
 import React from 'react';
-import Homescreen from './src/pages/Home';
+import {StyleSheet, View, Text, StatusBar} from 'react-native';
 
-const App = () => {
-  return <Homescreen />;
-};
+class App extends React.Component {
+  render() {
+    return (
+      <>
+        <StatusBar barStyle="dark-content" />
+        <View style={styles.container}>
+          <Text style={styles.text}>Test</Text>
+        </View>
+      </>
+    );
+  }
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  text: {
+    fontWeight: 'bold',
+    fontSize: 18,
+  },
+});
 
 export default App;
