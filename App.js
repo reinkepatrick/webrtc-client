@@ -1,20 +1,28 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- * @flow
- */
-
 import React from 'react';
-import {StyleSheet, View, Text, Button, StatusBar} from 'react-native';
+import {StyleSheet, TouchableHighlight, StatusBar} from 'react-native';
 import io from 'socket.io-client';
+import {
+  RTCPeerConnection,
+  RTCIceCandidate,
+  RTCSessionDescription,
+  RTCView,
+  MediaStream,
+  MediaStreamTrack,
+  mediaDevices,
+  registerGlobals,
+} from 'react-native-webrtc';
 import {SERVER_URL} from './config';
 
 class App extends React.Component {
   socket = null;
+  configuration = {iceServers: [{url: 'stun:stun.l.google.com:19302'}]};
   state = {
-    buttonPressed: 0,
+    pc: new RTCPeerConnection(this.configuration),
+    isFront: false,
+    frontVideoId: null,
+    backVideoId: null,
+    stream: null,
+    remote: null,
   };
 
   constructor(props) {
@@ -28,29 +36,80 @@ class App extends React.Component {
       transports: ['websocket'],
     });
 
-    this.socket.on('button_pressed', data => {
-      this.setState({
-        buttonPressed: data,
-      });
-    });
-
     this.socket.on('connect_error', err => {
       console.log(err);
     });
   }
 
-  onClick = () => {
-    this.socket.emit('button_pressed', this.state.buttonPressed);
+  componentDidMount() {
+    mediaDevices.enumerateDevices().then(sourceInfos => {
+      for (let i = 0; i < sourceInfos.length; i++) {
+        if (sourceInfos[i].kind === 'videoinput') {
+          if (sourceInfos[i].facing === 'front') {
+            this.setState({
+              frontVideoId: sourceInfos[i].deviceId,
+            });
+          } else {
+            this.setState({
+              backVideoId: sourceInfos[i].deviceId,
+            });
+          }
+        }
+      }
+    });
+
+    mediaDevices
+    .getUserMedia({
+      audio: true,
+      video: {
+        mandatory: {
+          minWidth: 1920,
+          minHeight: 1080,
+          minFrameRate: 60,
+        },
+        facingMode: this.state.isFront ? 'user' : 'environment',
+        optional: this.state.isFront ? [{sourceId: this.state.frontVideoId}] : [],
+      },
+    })
+    .then(stream => {
+      this.setState({
+        stream: stream,
+      });
+    })
+    .catch(error => {
+      console.log(error);
+    });
+  }
+
+  _onPressButton = () => {
+    this.state.stream.getVideoTracks().forEach(track => {
+      track._switchCamera();
+    });
+
+    this.setState(prevState => ({
+      isFront: !prevState.isFront
+    }))
   };
 
   render() {
+    this.state.stream ? this.state.stream.getAudioTracks().readonly = false : null
+    console.log(this.state.stream ? this.state.stream.getAudioTracks() : null);
     return (
       <>
-        <StatusBar barStyle="dark-content" />
-        <View style={styles.container}>
-          <Text style={styles.text}>{this.state.buttonPressed}</Text>
-          <Button title="Gib mir Pi" onPress={this.onClick} />
-        </View>
+        <StatusBar barStyle="dark-content" backgroundColor="white" />
+        <TouchableHighlight
+          style={styles.container}
+          onPress={this._onPressButton}>
+          {this.state.stream ? (
+            <RTCView
+              style={styles.view}
+              mirror={this.state.isFront}
+              streamURL={this.state.stream.toURL()}
+            />
+          ) : (
+            <></>
+          )}
+        </TouchableHighlight>
       </>
     );
   }
@@ -61,10 +120,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'white',
+    height: '100%',
+    width: '100%',
+  },
+  view: {
+    width: '100%',
+    height: '100%',
   },
   text: {
     fontWeight: 'bold',
-    fontSize: 18,
+    marginBottom: 15,
+    fontSize: 26,
   },
 });
 
