@@ -12,36 +12,68 @@ import {
   registerGlobals,
 } from 'react-native-webrtc';
 import {SERVER_URL} from './config';
+import DeviceList from './src/components/DeviceList/DeviceList';
 
 class App extends React.Component {
-  socket = null;
   configuration = {iceServers: [{url: 'stun:stun.l.google.com:19302'}]};
-  state = {
-    pc: new RTCPeerConnection(this.configuration),
-    isFront: false,
-    frontVideoId: null,
-    backVideoId: null,
-    stream: null,
-    remote: null,
-  };
 
   constructor(props) {
     super(props);
 
-    this.socket = io(SERVER_URL, {
-      reconnection: true,
-      reconnectionDelay: 500,
-      jsonp: false,
-      reconnectionAttempts: Infinity,
-      transports: ['websocket'],
+    this.state = {
+      socket: io(SERVER_URL, {
+        jsonp: false,
+        transports: ['websocket'],
+      }),
+      pc: new RTCPeerConnection(this.configuration),
+      rpc: new RTCPeerConnection(this.configuration),
+      isFront: false,
+      frontVideoId: null,
+      backVideoId: null,
+      stream: null,
+      remote: null,
+    };
+
+    console.log(this.state.socket);
+    //this._getMediaDevices();
+  }
+
+  componentDidMount() {
+    /*this.socket.on('remoteDescription', desc => {
+      let sdp = new RTCSessionDescription(desc);
+      console.log(sdp);
+
+      if (sdp.type === 'offer') {
+        this.state.pc.setRemoteDescription(sdp);
+      }
     });
 
     this.socket.on('connect_error', err => {
       console.log(err);
     });
+
+    this.socket.on('disconnect', function() {
+      console.log('The client has disconnected!');
+    });
+
+    this._setPeerConnection();*/
   }
 
-  componentDidMount() {
+  _sentDescription(desc) {
+    if (this.state.socket) {
+      this.state.socket.emit('setDescription', desc);
+    }
+  }
+
+  _setPeerConnection() {
+    this.state.pc.createOffer().then(desc => {
+      this.state.pc.setLocalDescription(desc).then(() => {
+        this._sentDescription(desc);
+      });
+    });
+  }
+
+  _getMediaDevices = () => {
     mediaDevices.enumerateDevices().then(sourceInfos => {
       for (let i = 0; i < sourceInfos.length; i++) {
         if (sourceInfos[i].kind === 'videoinput') {
@@ -59,27 +91,33 @@ class App extends React.Component {
     });
 
     mediaDevices
-    .getUserMedia({
-      audio: true,
-      video: {
-        mandatory: {
-          minWidth: 1920,
-          minHeight: 1080,
-          minFrameRate: 60,
+      .getUserMedia({
+        audio: true,
+        video: {
+          mandatory: {
+            minWidth: 1920,
+            minHeight: 1080,
+            minFrameRate: 60,
+          },
+          facingMode: this.state.isFront ? 'user' : 'environment',
+          optional: this.state.isFront
+            ? [{sourceId: this.state.frontVideoId}]
+            : [{sourceId: this.state.backVideoId}],
         },
-        facingMode: this.state.isFront ? 'user' : 'environment',
-        optional: this.state.isFront ? [{sourceId: this.state.frontVideoId}] : [],
-      },
-    })
-    .then(stream => {
-      this.setState({
-        stream: stream,
+      })
+      .then(stream => {
+        this.setState({
+          stream: stream,
+        });
+      })
+      .catch(error => {
+        console.log(error);
       });
-    })
-    .catch(error => {
-      console.log(error);
-    });
-  }
+
+    this.state.pc.onicecandidate = e => {
+      console.log(e);
+    };
+  };
 
   _onPressButton = () => {
     this.state.stream.getVideoTracks().forEach(track => {
@@ -87,17 +125,22 @@ class App extends React.Component {
     });
 
     this.setState(prevState => ({
-      isFront: !prevState.isFront
-    }))
+      isFront: !prevState.isFront,
+    }));
   };
 
   render() {
-    this.state.stream ? this.state.stream.getAudioTracks().readonly = false : null
-    console.log(this.state.stream ? this.state.stream.getAudioTracks() : null);
     return (
       <>
         <StatusBar barStyle="dark-content" backgroundColor="white" />
-        <TouchableHighlight
+        {this.state.socket ? <DeviceList socket={this.state.socket} /> : null}
+      </>
+    );
+  }
+}
+
+/*
+<TouchableHighlight
           style={styles.container}
           onPress={this._onPressButton}>
           {this.state.stream ? (
@@ -110,10 +153,7 @@ class App extends React.Component {
             <></>
           )}
         </TouchableHighlight>
-      </>
-    );
-  }
-}
+*/
 
 const styles = StyleSheet.create({
   container: {
