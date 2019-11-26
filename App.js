@@ -29,9 +29,8 @@ class App extends React.Component {
       pc: null,
       rpc: null,
       to: null,
-      isFront: false,
-      frontVideoId: null,
-      backVideoId: null,
+      isFront: true,
+      videoSourceId: null,
       stream: null,
       remote: null,
     };
@@ -41,9 +40,11 @@ class App extends React.Component {
     this._getMediaDevices();
 
     this.state.socket.on('remoteDescription', data => {
-      if (this.state.rpc === null) {
+      if (data.desc) {
         let sdp = new RTCSessionDescription(data.desc);
-        const peer = this._onCreatePeer(data.from, false);
+        const peer = this.state.rpc
+          ? this.state.rpc
+          : this._onCreatePeer(this.state.socket.id, false);
 
         peer.setRemoteDescription(sdp).then(() => {
           if (peer.remoteDescription.type === 'offer' && !this.isNegotiating) {
@@ -87,6 +88,7 @@ class App extends React.Component {
     peer.addStream(this.state.stream);
 
     peer.onaddstream = event => {
+      console.log(event);
       this.setState({
         remote: event.stream,
       });
@@ -126,18 +128,15 @@ class App extends React.Component {
   }
 
   _getMediaDevices = () => {
-    mediaDevices.enumerateDevices().then(sourceInfos => {
-      for (let i = 0; i < sourceInfos.length; i++) {
-        if (sourceInfos[i].kind === 'videoinput') {
-          if (sourceInfos[i].facing === 'front') {
-            this.setState({
-              frontVideoId: sourceInfos[i].deviceId,
-            });
-          } else {
-            this.setState({
-              backVideoId: sourceInfos[i].deviceId,
-            });
-          }
+    mediaDevices.enumerateDevices().then(sourceInfo => {
+      for (let i = 0; i < sourceInfo.length; i++) {
+        if (
+          sourceInfo.kind === 'videoinput' &&
+          sourceInfo.facing === (this.state.isFront ? 'front' : 'environment')
+        ) {
+          this.setState({
+            videoSourceId: sourceInfo.deviceId,
+          });
         }
       }
     });
@@ -152,9 +151,9 @@ class App extends React.Component {
             minFrameRate: 60,
           },
           facingMode: this.state.isFront ? 'user' : 'environment',
-          optional: this.state.isFront
-            ? [{sourceId: this.state.frontVideoId}]
-            : [{sourceId: this.state.backVideoId}],
+          optional: this.state.videoSourceId
+            ? [{sourceId: this.state.videoSourceId}]
+            : [],
         },
       })
       .then(stream => {
@@ -181,24 +180,17 @@ class App extends React.Component {
     }));
   };
 
-  _log = string => {
-    console.log(string);
-  };
-
   render() {
+    this.state.remote ? console.log(this.state.remote.toURL()) : null;
     return (
       <>
         <StatusBar barStyle="dark-content" backgroundColor="white" />
         {this.state.remote ? (
-          <TouchableHighlight
-            style={styles.container}
-            onPress={this._onPressButton}>
-            <RTCView
-              style={styles.view}
-              mirror={this.state.isFront}
-              streamURL={this.state.remote.toURL()}
-            />
-          </TouchableHighlight>
+          <RTCView
+            style={styles.view}
+            mirror={this.state.isFront}
+            streamURL={this.state.remote.toURL()}
+          />
         ) : this.state.socket ? (
           <DeviceList
             socket={this.state.socket}
