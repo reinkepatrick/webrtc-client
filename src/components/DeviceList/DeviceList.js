@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, View, Text} from 'react-native';
+import {StyleSheet, FlatList, SafeAreaView, Text} from 'react-native';
 
 class DeviceList extends React.Component {
   constructor(props) {
@@ -44,19 +44,22 @@ class DeviceList extends React.Component {
   };
 
   render() {
-    let clients = this.state.clients.map(client => {
-      return (
-        <Text key={client} style={styles.text}>
-          {client}
-        </Text>
-      );
-    });
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
         <Text style={styles.id}>{this.props.socket.id}</Text>
         <Text style={styles.text}>Clients:</Text>
-        {clients}
-      </View>
+        <FlatList
+          data={this.state.clients}
+          renderItem={({item}) => (
+            <Text
+              style={styles.text}
+              onPress={() => this.props.onSelectPeer(item)}>
+              {item}
+            </Text>
+          )}
+          keyExtractor={item => item}
+        />
+      </SafeAreaView>
     );
   }
 }
@@ -73,6 +76,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 15,
     fontSize: 26,
+  },
+  id: {
+    marginTop: 10,
   },
 });
 

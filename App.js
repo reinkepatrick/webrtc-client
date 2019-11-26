@@ -15,6 +15,7 @@ import {SERVER_URL} from './config';
 import DeviceList from './src/components/DeviceList/DeviceList';
 
 class App extends React.Component {
+  isNegotiating = false;
   configuration = {iceServers: [{url: 'stun:stun.l.google.com:19302'}]};
 
   constructor(props) {
@@ -25,51 +26,102 @@ class App extends React.Component {
         jsonp: false,
         transports: ['websocket'],
       }),
-      pc: new RTCPeerConnection(this.configuration),
-      rpc: new RTCPeerConnection(this.configuration),
+      pc: null,
+      rpc: null,
+      to: null,
       isFront: false,
       frontVideoId: null,
       backVideoId: null,
       stream: null,
       remote: null,
     };
-
-    console.log(this.state.socket);
-    //this._getMediaDevices();
   }
 
   componentDidMount() {
-    /*this.socket.on('remoteDescription', desc => {
-      let sdp = new RTCSessionDescription(desc);
-      console.log(sdp);
+    this._getMediaDevices();
 
-      if (sdp.type === 'offer') {
-        this.state.pc.setRemoteDescription(sdp);
+    this.state.socket.on('remoteDescription', data => {
+      if (this.state.rpc === null) {
+        let sdp = new RTCSessionDescription(data.desc);
+        const peer = this._onCreatePeer(data.from, false);
+
+        peer.setRemoteDescription(sdp).then(() => {
+          if (peer.remoteDescription.type === 'offer' && !this.isNegotiating) {
+            peer.createAnswer().then(desc => {
+              peer.setLocalDescription(desc).then(() => {
+                this._sentDescription(data.from, desc);
+              });
+            });
+          }
+        });
+
+        this.setState({
+          rpc: peer,
+        });
+      } else if (this.state.rpc && data.candidate) {
+        let candidate = new RTCIceCandidate(data.candidate);
+        this.state.rpc
+          .addIceCandidate(candidate)
+          .catch(err => console.log(err));
       }
     });
-
-    this.socket.on('connect_error', err => {
-      console.log(err);
-    });
-
-    this.socket.on('disconnect', function() {
-      console.log('The client has disconnected!');
-    });
-
-    this._setPeerConnection();*/
   }
 
-  _sentDescription(desc) {
+  _onCreatePeer = (socketId, isOffer) => {
+    const peer = new RTCPeerConnection(this.configuration);
+
+    peer.onnegotiationneeded = () => {
+      if (this.isNegotiating) {
+        return;
+      }
+      this.isNegotiating = true;
+      if (isOffer) {
+        peer.createOffer().then(desc => {
+          peer.setLocalDescription(desc).then(() => {
+            this._sentDescription(socketId, desc);
+          });
+        });
+      }
+    };
+
+    peer.addStream(this.state.stream);
+
+    peer.onaddstream = event => {
+      this.setState({
+        remote: event.stream,
+      });
+    };
+
+    peer.onicecandidate = event => {
+      if (event.candidate) {
+        this.state.socket.emit('setDescription', {
+          to: socketId,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    peer.onsignalingstatechange = event => {
+      this.isNegotiating = peer.signalingState !== 'stable';
+    };
+    peer.onremovestream = event => {};
+
+    return peer;
+  };
+
+  _sentDescription(to, desc) {
     if (this.state.socket) {
-      this.state.socket.emit('setDescription', desc);
+      this.state.socket.emit('setDescription', {
+        to: to,
+        desc: desc,
+      });
     }
   }
 
-  _setPeerConnection() {
-    this.state.pc.createOffer().then(desc => {
-      this.state.pc.setLocalDescription(desc).then(() => {
-        this._sentDescription(desc);
-      });
+  _setPeerConnection(to) {
+    const peer = this._onCreatePeer(to, true);
+    this.setState({
+      pc: peer,
     });
   }
 
@@ -113,10 +165,10 @@ class App extends React.Component {
       .catch(error => {
         console.log(error);
       });
+  };
 
-    this.state.pc.onicecandidate = e => {
-      console.log(e);
-    };
+  _onSelectPeer = peer => {
+    this._setPeerConnection(peer);
   };
 
   _onPressButton = () => {
@@ -129,31 +181,34 @@ class App extends React.Component {
     }));
   };
 
+  _log = string => {
+    console.log(string);
+  };
+
   render() {
     return (
       <>
         <StatusBar barStyle="dark-content" backgroundColor="white" />
-        {this.state.socket ? <DeviceList socket={this.state.socket} /> : null}
+        {this.state.remote ? (
+          <TouchableHighlight
+            style={styles.container}
+            onPress={this._onPressButton}>
+            <RTCView
+              style={styles.view}
+              mirror={this.state.isFront}
+              streamURL={this.state.remote.toURL()}
+            />
+          </TouchableHighlight>
+        ) : this.state.socket ? (
+          <DeviceList
+            socket={this.state.socket}
+            onSelectPeer={this._onSelectPeer}
+          />
+        ) : null}
       </>
     );
   }
 }
-
-/*
-<TouchableHighlight
-          style={styles.container}
-          onPress={this._onPressButton}>
-          {this.state.stream ? (
-            <RTCView
-              style={styles.view}
-              mirror={this.state.isFront}
-              streamURL={this.state.stream.toURL()}
-            />
-          ) : (
-            <></>
-          )}
-        </TouchableHighlight>
-*/
 
 const styles = StyleSheet.create({
   container: {
