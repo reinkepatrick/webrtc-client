@@ -27,8 +27,6 @@ class App extends React.Component {
         transports: ['websocket'],
       }),
       pc: null,
-      rpc: null,
-      to: null,
       isFront: true,
       videoSourceId: null,
       stream: null,
@@ -42,88 +40,28 @@ class App extends React.Component {
     this.state.socket.on('remoteDescription', data => {
       if (data.desc) {
         let sdp = new RTCSessionDescription(data.desc);
-        const peer = this.state.rpc
-          ? this.state.rpc
-          : this._onCreatePeer(this.state.socket.id, false);
 
-        peer.setRemoteDescription(sdp).then(() => {
-          if (peer.remoteDescription.type === 'offer' && !this.isNegotiating) {
+        if (sdp.type === 'offer') {
+          let peer = this._onCreatePeer(data.from, false);
+
+          peer.setRemoteDescription(sdp).then(() => {
             peer.createAnswer().then(desc => {
               peer.setLocalDescription(desc).then(() => {
                 this._sentDescription(data.from, desc);
               });
             });
-          }
-        });
-
-        this.setState({
-          rpc: peer,
-        });
-      } else if (this.state.rpc && data.candidate) {
-        let candidate = new RTCIceCandidate(data.candidate);
-        this.state.rpc
-          .addIceCandidate(candidate)
-          .catch(err => console.log(err));
-      }
-    });
-  }
-
-  _onCreatePeer = (socketId, isOffer) => {
-    const peer = new RTCPeerConnection(this.configuration);
-
-    peer.onnegotiationneeded = () => {
-      if (this.isNegotiating) {
-        return;
-      }
-      this.isNegotiating = true;
-      if (isOffer) {
-        peer.createOffer().then(desc => {
-          peer.setLocalDescription(desc).then(() => {
-            this._sentDescription(socketId, desc);
           });
-        });
+
+          this.setState({
+            pc: peer,
+          });
+        } else if (sdp.type === 'answer') {
+          this.state.pc.setRemoteDescription(sdp);
+        }
+      } else if (data.candidate) {
+        let candidate = new RTCIceCandidate(data.candidate);
+        this.state.pc.addIceCandidate(candidate);
       }
-    };
-
-    peer.addStream(this.state.stream);
-
-    peer.onaddstream = event => {
-      console.log(event);
-      this.setState({
-        remote: event.stream,
-      });
-    };
-
-    peer.onicecandidate = event => {
-      if (event.candidate) {
-        this.state.socket.emit('setDescription', {
-          to: socketId,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    peer.onsignalingstatechange = event => {
-      this.isNegotiating = peer.signalingState !== 'stable';
-    };
-    peer.onremovestream = event => {};
-
-    return peer;
-  };
-
-  _sentDescription(to, desc) {
-    if (this.state.socket) {
-      this.state.socket.emit('setDescription', {
-        to: to,
-        desc: desc,
-      });
-    }
-  }
-
-  _setPeerConnection(to) {
-    const peer = this._onCreatePeer(to, true);
-    this.setState({
-      pc: peer,
     });
   }
 
@@ -166,22 +104,63 @@ class App extends React.Component {
       });
   };
 
-  _onSelectPeer = peer => {
-    this._setPeerConnection(peer);
+  _onCreatePeer = (socketId, isOffer) => {
+    const peer = new RTCPeerConnection(this.configuration);
+
+    peer.onnegotiationneeded = () => {
+      if (this.isNegotiating) {
+        return;
+      }
+      this.isNegotiating = true;
+      if (isOffer) {
+        peer.createOffer().then(desc => {
+          peer.setLocalDescription(desc).then(() => {
+            this._sentDescription(socketId, desc);
+          });
+        });
+      }
+    };
+
+    peer.addStream(this.state.stream);
+
+    peer.onaddstream = event => {
+      this.setState({
+        remote: event.stream,
+      });
+    };
+
+    peer.onicecandidate = event => {
+      if (event.candidate) {
+        this.state.socket.emit('setDescription', {
+          to: socketId,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    peer.onsignalingstatechange = event => {
+      this.isNegotiating = peer.signalingState !== 'stable';
+    };
+    peer.onremovestream = event => {};
+
+    return peer;
   };
 
-  _onPressButton = () => {
-    this.state.stream.getVideoTracks().forEach(track => {
-      track._switchCamera();
+  _onSelectPeer = socketId => {
+    let peer = this._onCreatePeer(socketId, true);
+    this.setState({
+      pc: peer,
     });
+  };
 
-    this.setState(prevState => ({
-      isFront: !prevState.isFront,
-    }));
+  _sentDescription = (to, data) => {
+    this.state.socket.emit('setDescription', {
+      to: to,
+      desc: data,
+    });
   };
 
   render() {
-    this.state.remote ? console.log(this.state.remote.toURL()) : null;
     return (
       <>
         <StatusBar barStyle="dark-content" backgroundColor="white" />
