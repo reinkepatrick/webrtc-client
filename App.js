@@ -6,17 +6,14 @@ import {
   RTCIceCandidate,
   RTCSessionDescription,
   RTCView,
-  MediaStream,
-  MediaStreamTrack,
-  mediaDevices,
-  registerGlobals,
 } from 'react-native-webrtc';
+import MediaDevice from './src/utils/mediaDevice';
+import Peer from './src/utils/peer';
 import {SERVER_URL} from './config';
 import DeviceList from './src/components/DeviceList/DeviceList';
 
 class App extends React.Component {
-  isNegotiating = false;
-  configuration = {iceServers: [{url: 'stun:stun.l.google.com:19302'}]};
+  mediaDevice = new MediaDevice(true, 480, 640, 30);
 
   constructor(props) {
     super(props);
@@ -27,136 +24,77 @@ class App extends React.Component {
         transports: ['websocket'],
       }),
       pc: null,
-      isFront: true,
-      videoSourceId: null,
       stream: null,
+      videoSourceId: null,
       remote: null,
     };
+
+    this.mediaDevice.getStream().then(stream => {
+      this.setState({
+        stream: stream,
+      });
+    });
   }
 
   componentDidMount() {
-    this._getMediaDevices();
-
     this.state.socket.on('remoteDescription', data => {
       if (data.desc) {
         let sdp = new RTCSessionDescription(data.desc);
 
         if (sdp.type === 'offer') {
-          let peer = this._onCreatePeer(data.from, false);
+          let peer = new Peer(
+            this.state.stream,
+            data.from,
+            false,
+            this._sentDescription,
+            this._onRemoteStream,
+          );
 
-          peer.setRemoteDescription(sdp).then(() => {
-            peer.createAnswer().then(desc => {
-              peer.setLocalDescription(desc).then(() => {
-                this._sentDescription(data.from, desc);
-              });
-            });
-          });
+          peer.onOffer(sdp);
 
           this.setState({
             pc: peer,
           });
         } else if (sdp.type === 'answer') {
-          this.state.pc.setRemoteDescription(sdp);
+          this.state.pc.onAnswer(sdp);
         }
       } else if (data.candidate) {
         let candidate = new RTCIceCandidate(data.candidate);
-        this.state.pc.addIceCandidate(candidate);
+        this.state.pc.addCandidate(candidate);
       }
     });
   }
 
-  _getMediaDevices = () => {
-    mediaDevices.enumerateDevices().then(sourceInfo => {
-      for (let i = 0; i < sourceInfo.length; i++) {
-        if (
-          sourceInfo.kind === 'videoinput' &&
-          sourceInfo.facing === (this.state.isFront ? 'front' : 'environment')
-        ) {
-          this.setState({
-            videoSourceId: sourceInfo.deviceId,
-          });
-        }
-      }
-    });
-
-    mediaDevices
-      .getUserMedia({
-        audio: true,
-        video: {
-          mandatory: {
-            minWidth: 1920,
-            minHeight: 1080,
-            minFrameRate: 60,
-          },
-          facingMode: this.state.isFront ? 'user' : 'environment',
-          optional: this.state.videoSourceId
-            ? [{sourceId: this.state.videoSourceId}]
-            : [],
-        },
-      })
-      .then(stream => {
-        this.setState({
-          stream: stream,
-        });
-      })
-      .catch(error => {
-        console.log(error);
-      });
-  };
-
-  _onCreatePeer = (socketId, isOffer) => {
-    const peer = new RTCPeerConnection(this.configuration);
-
-    peer.onnegotiationneeded = () => {
-      if (this.isNegotiating) {
-        return;
-      }
-      this.isNegotiating = true;
-      if (isOffer) {
-        peer.createOffer().then(desc => {
-          peer.setLocalDescription(desc).then(() => {
-            this._sentDescription(socketId, desc);
-          });
-        });
-      }
-    };
-
-    peer.addStream(this.state.stream);
-
-    peer.onaddstream = event => {
-      this.setState({
-        remote: event.stream,
-      });
-    };
-
-    peer.onicecandidate = event => {
-      if (event.candidate) {
-        this.state.socket.emit('setDescription', {
-          to: socketId,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    peer.onsignalingstatechange = event => {
-      this.isNegotiating = peer.signalingState !== 'stable';
-    };
-    peer.onremovestream = event => {};
-
-    return peer;
-  };
-
   _onSelectPeer = socketId => {
-    let peer = this._onCreatePeer(socketId, true);
+    let peer = new Peer(
+      this.state.stream,
+      socketId,
+      true,
+      this._sentDescription,
+      this._onRemoteStream,
+    );
     this.setState({
       pc: peer,
     });
   };
 
   _sentDescription = (to, data) => {
-    this.state.socket.emit('setDescription', {
-      to: to,
-      desc: data,
+    if (data.sdp) {
+      this.state.socket.emit('setDescription', {
+        to: to,
+        desc: data,
+      });
+    } else if (data.candidate) {
+      this.state.socket.emit('setDescription', {
+        to: to,
+        candidate: data,
+      });
+    }
+  };
+
+  _onRemoteStream = stream => {
+    this.setState({
+      remote: stream,
     });
   };
 
