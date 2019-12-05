@@ -1,20 +1,11 @@
 import React from 'react';
-import {StyleSheet, TouchableHighlight, StatusBar} from 'react-native';
+import {StyleSheet, StatusBar, TouchableOpacity} from 'react-native';
 import io from 'socket.io-client';
-import {
-  RTCPeerConnection,
-  RTCIceCandidate,
-  RTCSessionDescription,
-  RTCView,
-} from 'react-native-webrtc';
-import MediaDevice from './src/utils/mediaDevice';
-import Peer from './src/utils/peer';
 import {SERVER_URL} from './config';
 import DeviceList from './src/components/DeviceList/DeviceList';
+import VideoCallView from './src/components/VideoCallView/VideoCallView';
 
 class App extends React.Component {
-  mediaDevice = new MediaDevice(true, 480, 640, 30);
-
   constructor(props) {
     super(props);
 
@@ -22,79 +13,34 @@ class App extends React.Component {
       socket: io(SERVER_URL, {
         jsonp: false,
         transports: ['websocket'],
+        connection: false,
+        callee: null,
+        caller: null,
       }),
-      pc: null,
-      stream: null,
-      videoSourceId: null,
-      remote: null,
     };
-
-    this.mediaDevice.getStream().then(stream => {
-      this.setState({
-        stream: stream,
-      });
-    });
   }
 
-  componentDidMount() {
-    this.state.socket.on('remoteDescription', data => {
-      if (data.desc) {
-        let sdp = new RTCSessionDescription(data.desc);
+  componentDidMount() {}
 
-        if (sdp.type === 'offer') {
-          let peer = new Peer(
-            this.state.stream,
-            data.from,
-            false,
-            this._sentDescription,
-            this._onRemoteStream,
-          );
-
-          peer.onOffer(sdp);
-
-          this.setState({
-            pc: peer,
-          });
-        } else if (sdp.type === 'answer') {
-          this.state.pc.onAnswer(sdp);
-        }
-      } else if (data.candidate) {
-        let candidate = new RTCIceCandidate(data.candidate);
-        this.state.pc.addCandidate(candidate);
-      }
-    });
-  }
-
-  _onSelectPeer = socketId => {
-    let peer = new Peer(
-      this.state.stream,
-      socketId,
-      true,
-      this._sentDescription,
-      this._onRemoteStream,
-    );
+  _onSelectPeer = item => {
     this.setState({
-      pc: peer,
+      connection: true,
+      callee: item,
     });
   };
 
-  _sentDescription = (to, data) => {
-    if (data.sdp) {
-      this.state.socket.emit('setDescription', {
-        to: to,
-        desc: data,
-      });
-    } else if (data.candidate) {
-      this.state.socket.emit('setDescription', {
-        to: to,
-        candidate: data,
-      });
-    }
+  _onAcceptCall = item => {
+    this.setState({
+      connection: true,
+      caller: item,
+    });
   };
 
-  _onRemoteStream = stream => {
+  _onCloseCall = () => {
     this.setState({
-      remote: stream,
+      connection: false,
+      callee: null,
+      caller: null,
     });
   };
 
@@ -102,41 +48,23 @@ class App extends React.Component {
     return (
       <>
         <StatusBar barStyle="dark-content" backgroundColor="white" />
-        {this.state.remote ? (
-          <RTCView
-            style={styles.view}
-            mirror={this.state.isFront}
-            streamURL={this.state.remote.toURL()}
+        {this.state.connection ? (
+          <VideoCallView
+            socket={this.state.socket}
+            callee={this.state.callee}
+            caller={this.state.caller}
+            onCloseCall={this._onCloseCall}
           />
         ) : this.state.socket ? (
           <DeviceList
             socket={this.state.socket}
             onSelectPeer={this._onSelectPeer}
+            onAcceptCall={this._onAcceptCall}
           />
         ) : null}
       </>
     );
   }
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    height: '100%',
-    width: '100%',
-  },
-  view: {
-    width: '100%',
-    height: '100%',
-  },
-  text: {
-    fontWeight: 'bold',
-    marginBottom: 15,
-    fontSize: 26,
-  },
-});
 
 export default App;

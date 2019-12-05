@@ -24,19 +24,29 @@ class MediaDevice {
     });
   }
 
-  async getStream() {
-    return await mediaDevices.getUserMedia({
-      audio: true,
-      video: {
-        mandatory: {
-          width: {ideal: this.minWidth},
-          height: {ideal: this.minHeight},
-          frameRate: this.minFrameRate,
-        },
-        facingMode: this.isFront ? 'user' : 'environment',
-        optional: this.videoSourceId ? [{sourceId: this.videoSourceId}] : [],
-      },
+  switchCamera = () => {
+    this.stream.getVideoTracks().forEach(track => {
+      track._switchCamera();
     });
+  };
+
+  async getStream() {
+    return await mediaDevices
+      .getUserMedia({
+        audio: true,
+        video: {
+          mandatory: {
+            width: {ideal: this.minWidth},
+            height: {ideal: this.minHeight},
+            frameRate: this.minFrameRate,
+          },
+          facingMode: this.isFront ? 'user' : 'environment',
+          optional: this.videoSourceId ? [{sourceId: this.videoSourceId}] : [],
+        },
+      })
+      .then(stream => {
+        return (this.stream = stream);
+      });
   }
 }
 

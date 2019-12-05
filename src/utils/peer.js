@@ -5,13 +5,23 @@ class Peer {
   configuration = {iceServers: [{url: 'stun:stun.l.google.com:19302'}]};
   peer = null;
   socketId = null;
+  stream = null;
 
-  constructor(stream, socketId, isOffer, sentDescription, onRemoteStream) {
+  constructor(
+    stream,
+    socketId,
+    isOffer,
+    sentDescription,
+    onRemoteStream,
+    onCloseCall,
+  ) {
+    this.onCloseCall = onCloseCall;
     this.sentDescription = sentDescription;
     this.socketId = socketId;
     this.peer = new RTCPeerConnection(this.configuration);
+    this.stream = stream;
 
-    this.peer.onnegotiationneeded = () => {
+    this.peer.onnegotiationneeded = data => {
       if (this.isNegotiating) {
         return;
       }
@@ -25,7 +35,7 @@ class Peer {
       }
     };
 
-    this.peer.addStream(stream);
+    this.peer.addStream(this.stream);
 
     this.peer.onaddstream = event => {
       onRemoteStream(event.stream);
@@ -37,10 +47,15 @@ class Peer {
       }
     };
 
-    this.peer.onsignalingstatechange = event => {
+    this.peer.onsignalingstatechange = () => {
       this.isNegotiating = this.peer.signalingState !== 'stable';
     };
-    this.peer.onremovestream = event => {};
+
+    this.peer.oniceconnectionstatechange = data => {
+      if (this.peer.iceConnectionState === 'disconnected') {
+        this.close();
+      }
+    };
   }
 
   onOffer = sdp => {
@@ -59,6 +74,11 @@ class Peer {
 
   addCandidate = candidate => {
     this.peer.addIceCandidate(candidate);
+  };
+
+  close = () => {
+    this.peer.close();
+    this.onCloseCall();
   };
 }
 
