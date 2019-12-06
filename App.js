@@ -13,10 +13,10 @@ class App extends React.Component {
       socket: io(SERVER_URL, {
         jsonp: false,
         transports: ['websocket'],
-        connection: false,
-        callee: null,
-        caller: null,
       }),
+      connection: false,
+      callee: null,
+      caller: null,
     };
   }
 
